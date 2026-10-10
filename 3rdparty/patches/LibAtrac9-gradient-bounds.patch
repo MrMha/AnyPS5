@@ -1,0 +1,123 @@
+From 59b9e328e7a5b09e4be7caa6fbc2265d972bbf7d Mon Sep 17 00:00:00 2001
+From: AnyPS5 Review <review@local.invalid>
+Date: Sat, 10 Oct 2026 12:36:18 -0600
+Subject: [PATCH] fix(atrac9): reject gradients beyond the backing array
+
+---
+ C/src/unpack.c          |  2 +-
+ tests/gradient_bounds.c | 93 +++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 94 insertions(+), 1 deletion(-)
+ create mode 100644 tests/gradient_bounds.c
+
+diff --git a/C/src/unpack.c b/C/src/unpack.c
+index 8b66e49..d916d15 100644
+--- a/C/src/unpack.c
++++ b/C/src/unpack.c
+@@ -186,7 +186,7 @@ static At9Status ReadGradientParams(Block* block, BitReaderCxt* br)
+ 	{
+ 		return ERR_UNPACK_GRAD_START_UNIT_OOB;
+ 	}
+-	if (block->GradientEndUnit < 0 || block->GradientEndUnit >= 48)
++	if (block->GradientEndUnit < 0 || block->GradientEndUnit > (int)(sizeof(block->Gradient) / sizeof(block->Gradient[0])))
+ 	{
+ 		return ERR_UNPACK_GRAD_END_UNIT_OOB;
+ 	}
+diff --git a/tests/gradient_bounds.c b/tests/gradient_bounds.c
+new file mode 100644
+index 0000000..3f059cc
+--- /dev/null
++++ b/tests/gradient_bounds.c
+@@ -0,0 +1,93 @@
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++#include "../C/src/unpack.c"
++
++static void WriteBits(unsigned char* bytes, int* position, int value, int count)
++{
++    for (int bit = count - 1; bit >= 0; --bit)
++    {
++        bytes[*position / 8] |= ((value >> bit) & 1) << (7 - *position % 8);
++        ++*position;
++    }
++}
++
++static At9Status Parse(Block* block, int mode, int start, int end, int first, int last)
++{
++    unsigned char bytes[8] = {0};
++    int position = 0;
++    WriteBits(bytes, &position, mode, 2);
++    WriteBits(bytes, &position, start, mode ? 5 : 6);
++    if (!mode) WriteBits(bytes, &position, end - 1, 6);
++    WriteBits(bytes, &position, first, 5);
++    if (!mode) WriteBits(bytes, &position, last, 5);
++    WriteBits(bytes, &position, 0, 4);
++    BitReaderCxt reader;
++    InitBitReaderCxt(&reader, bytes, sizeof(bytes));
++    return ReadGradientParams(block, &reader);
++}
++
++int main(void)
++{
++    GenerateGradientCurves();
++    unsigned cases = 0;
++    for (int mode = 0; mode < 4; ++mode)
++    {
++        const int maximumStart = mode ? 31 : 47;
++        for (int start = 0; start <= maximumStart; ++start)
++        {
++            for (int end = 1; end <= 64; ++end)
++            {
++                for (int shape = 0; shape < 3; ++shape)
++                {
++                    Block block;
++                    memset(&block, 0, sizeof(block));
++                    block.QuantizationUnitCount = MAX_QUANT_UNITS;
++                    block.PrimaryChannelIndex = 137;
++                    block.BandExtensionEnabled = 139;
++                    const int first = shape == 2 ? 31 : 0;
++                    const int last = shape == 1 ? 31 : 0;
++                    const int parsedEnd = mode ? 31 : end;
++                    const At9Status status = Parse(&block, mode, start, end, first, last);
++                    if (!mode && end > 31)
++                    {
++                        if (status == ERR_SUCCESS) CreateGradient(&block);
++                        assert(status == ERR_UNPACK_GRAD_END_UNIT_OOB);
++                    }
++                    else if (start > parsedEnd)
++                    {
++                        assert(status == ERR_UNPACK_GRAD_END_UNIT_INVALID);
++                    }
++                    else
++                    {
++                        assert(status == ERR_SUCCESS);
++                        const int savedMode = block.GradientMode;
++                        const int savedStart = block.GradientStartUnit;
++                        const int savedFirst = block.GradientStartValue;
++                        const int savedEnd = block.GradientEndUnit;
++                        const int savedLast = block.GradientEndValue;
++                        assert(CreateGradient(&block) == ERR_SUCCESS);
++                        assert(block.GradientMode == savedMode);
++                        assert(block.GradientStartUnit == savedStart);
++                        assert(block.GradientStartValue == savedFirst);
++                        assert(block.GradientEndUnit == savedEnd);
++                        assert(block.GradientEndValue == savedLast);
++                        assert(block.PrimaryChannelIndex == 137);
++                        assert(block.BandExtensionEnabled == 139);
++                        for (int unit = 0; unit <= MAX_QUANT_UNITS; ++unit)
++                        {
++                            const int low = savedFirst < savedLast ? savedFirst : savedLast;
++                            const int high = savedFirst > savedLast ? savedFirst : savedLast;
++                            assert(block.Gradient[unit] >= low && block.Gradient[unit] <= high);
++                            if (unit < savedStart) assert(block.Gradient[unit] == savedFirst);
++                            if (unit >= savedEnd) assert(block.Gradient[unit] == savedLast);
++                        }
++                    }
++                    ++cases;
++                }
++            }
++        }
++    }
++    printf("Passed %u parser/gradient cases\n", cases);
++    return 0;
++}
