@@ -79,6 +79,7 @@ def assemble(body, work, wave64, *, ieee, denorm32, denorm16, dx10_clamp, round3
 def run(body, rows, extra=b"", wave64=False, coarse=False, *, ieee, denorm32, denorm16, dx10_clamp, round32, round16, fp16_overflow, lds=DEFAULT_LDS):
     rows = [tuple(r) for r in rows]
     wave = 64 if wave64 else 32
+    step = ROWS_PER_DISPATCH // 2 if wave64 else ROWS_PER_DISPATCH
     padded = rows + [(0, 0, 0, 0)] * (-len(rows) % wave)
     env = dict(os.environ)
     env.pop("COARSE", None)
@@ -89,8 +90,8 @@ def run(body, rows, extra=b"", wave64=False, coarse=False, *, ieee, denorm32, de
         work = Path(tmp)
         code = assemble(body, work, wave64, ieee=ieee, denorm32=denorm32, denorm16=denorm16,
                         dx10_clamp=dx10_clamp, round32=round32, round16=round16, fp16_overflow=fp16_overflow, lds=lds)
-        for start in range(0, len(padded), ROWS_PER_DISPATCH):
-            chunk = padded[start:start + ROWS_PER_DISPATCH]
+        for start in range(0, len(padded), step):
+            chunk = padded[start:start + step]
             (work / "in.bin").write_bytes(b"".join(struct.pack("<4I", *r) for r in chunk) + extra)
             subprocess.run([oracle(), str(code), str(len(chunk)), str(work / "in.bin"), str(work / "out.bin"), "16"], check=True, env=env)
             data = (work / "out.bin").read_bytes()

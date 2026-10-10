@@ -1,6 +1,7 @@
 import contextlib
 import io
 import os
+import struct
 import subprocess
 import tempfile
 import unittest
@@ -69,6 +70,40 @@ class OracleCacheTests(unittest.TestCase):
                 self.assertEqual(compiler.call_count, 2)
                 self.assertNotEqual(outputs[0], outputs[1])
                 self.assertEqual(list(cache.iterdir()), [binary])
+
+
+class DispatchTests(unittest.TestCase):
+    def test_wave_boundaries_preserve_every_input_and_extra_bytes(self):
+        extra = b"extra payload"
+        for wave64, maximum in ((False, 1024), (True, 512)):
+            for count in (0, 1, 31, 32, 33, 63, 64, 65, 511, 512, 513, 1023, 1024, 1025, 4096):
+                with self.subTest(wave64=wave64, count=count):
+                    rows = [(index, index + 1, index + 2, index + 3) for index in range(count)]
+                    chunks = []
+
+                    def execute(command, *, check, env):
+                        self.assertTrue(check)
+                        lanes = int(command[2])
+                        chunks.append(lanes)
+                        self.assertLessEqual(lanes, maximum)
+                        self.assertEqual(lanes % (64 if wave64 else 32), 0)
+                        self.assertEqual(command[-1], "16")
+                        self.assertEqual(env.get("COARSE"), "1")
+                        data = Path(command[3]).read_bytes()
+                        self.assertEqual(data[lanes * 16:], extra)
+                        output = b"".join(struct.pack("<16I", *struct.unpack_from("<4I", data, lane * 16), *range(12))
+                                          for lane in range(lanes))
+                        Path(command[4]).write_bytes(output)
+
+                    with patch.object(hw_oracle, "assemble", return_value=Path("kernel.co")), \
+                            patch.object(hw_oracle, "oracle", return_value="oracle"), \
+                            patch.object(hw_oracle.subprocess, "run", side_effect=execute):
+                        result = hw_oracle.run("v_mov_b32 v10, v4", rows, extra=extra, wave64=wave64, coarse=True, **MODES)
+                    self.assertEqual([row[:4] for row in result], rows)
+                    wave = 64 if wave64 else 32
+                    padded = count + (-count % wave)
+                    self.assertEqual(sum(chunks), padded)
+                    self.assertEqual(len(chunks), (padded + maximum - 1) // maximum)
 
 
 class FloatModeTests(unittest.TestCase):
