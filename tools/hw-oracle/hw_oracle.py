@@ -1,5 +1,7 @@
 import argparse
+import hashlib
 import os
+import shlex
 import shutil
 import struct
 import subprocess
@@ -33,15 +35,23 @@ def tool(name):
 
 
 def oracle():
-    binary = CACHE / "oracle"
     source = HERE / "oracle.c"
-    if binary.exists() and binary.stat().st_mtime >= source.stat().st_mtime:
+    compiler = shlex.split(os.environ.get("CC", "cc"))
+    if not compiler:
+        raise ValueError("CC must name a compiler command")
+    root = rocm_root()
+    if root is not None:
+        root = root.resolve()
+    configuration = repr((compiler, str(root))).encode("utf-8")
+    key = hashlib.sha256(source.read_bytes() + configuration).hexdigest()
+    directory = CACHE / key
+    binary = directory / "oracle"
+    if binary.is_file():
         return binary
-    CACHE.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(dir=CACHE) as tmp:
+    directory.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=directory) as tmp:
         output = Path(tmp) / "oracle"
-        command = [os.environ.get("CC", "cc"), "-O1", str(source), "-o", str(output)]
-        root = rocm_root()
+        command = [*compiler, "-O1", str(source), "-o", str(output)]
         if root:
             lib = root / "lib"
             command += [f"-I{root / 'include'}", f"-L{lib}", f"-Wl,-rpath,{lib}"]
@@ -51,8 +61,12 @@ def oracle():
 
 
 @cache
+def gpu_target():
+    return subprocess.run([oracle(), "--target"], capture_output=True, text=True, check=True).stdout.strip()
+
+
 def target():
-    return os.environ.get("HW_ORACLE_TARGET") or subprocess.run([oracle(), "--target"], capture_output=True, text=True, check=True).stdout.strip()
+    return os.environ.get("HW_ORACLE_TARGET") or gpu_target()
 
 
 def assemble(body, work, wave64, *, ieee, denorm32, denorm16, dx10_clamp, round32, round16, fp16_overflow, lds=DEFAULT_LDS):
@@ -78,6 +92,11 @@ def assemble(body, work, wave64, *, ieee, denorm32, denorm16, dx10_clamp, round3
 
 def run(body, rows, extra=b"", wave64=False, coarse=False, *, ieee, denorm32, denorm16, dx10_clamp, round32, round16, fp16_overflow, lds=DEFAULT_LDS):
     rows = [tuple(r) for r in rows]
+    for index, row in enumerate(rows, 1):
+        try:
+            struct.pack("<4I", *row)
+        except struct.error as error:
+            raise ValueError(f"row {index} must contain four unsigned 32-bit integers") from error
     wave = 64 if wave64 else 32
     padded = rows + [(0, 0, 0, 0)] * (-len(rows) % wave)
     env = dict(os.environ)

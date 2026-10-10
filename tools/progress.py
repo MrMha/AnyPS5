@@ -87,7 +87,7 @@ def scan_library(path):
     for source in path.rglob("*.cpp"):
         if "tests" in source.relative_to(path).parts:
             continue
-        text = source.read_text(errors="ignore")
+        text = source.read_text(encoding="utf-8")
         calls = stub_calls(text)
         for match in DEFINITION.finditer(text):
             name = match.group(1)
@@ -100,8 +100,8 @@ def scan_library(path):
              "done_names": sorted(done), "todo_names": sorted(todo)}
     if not (done or todo):
         cmake = path / "CMakeLists.txt"
-        texts = [(CMAKE_SHARED, cmake.read_text())] if cmake.is_file() else []
-        texts += [(SOURCE_SHARED, source.read_text(errors="ignore")) for source in sorted(path.glob("*.cpp"))]
+        texts = [(CMAKE_SHARED, cmake.read_text(encoding="utf-8"))] if cmake.is_file() else []
+        texts += [(SOURCE_SHARED, source.read_text(encoding="utf-8")) for source in sorted(path.glob("*.cpp"))]
         owners = [m[1] for pattern, content in texts for m in pattern.finditer(content)]
         owners = [o for o in owners if o != path.name and (path.parent / o).is_dir()]
         if owners:
@@ -125,12 +125,12 @@ def camel(name):
 
 def collect_shaders():
     isa = {}
-    for line in ISA.read_text().splitlines():
+    for line in ISA.read_text(encoding="utf-8").splitlines():
         if line and not line.startswith("#"):
             name, encoding = line.split()
             isa[name] = encoding
     by_camel = {camel(name): name for name in isa}
-    enum = re.search(r"enum class RdnaOpcode[^{]*\{(.*?)\};", OPCODES.read_text(), re.S).group(1)
+    enum = re.search(r"enum class RdnaOpcode[^{]*\{(.*?)\};", OPCODES.read_text(encoding="utf-8"), re.S).group(1)
     opcodes = [o for o in re.findall(r"^\s*([A-Z]\w*)\s*[,=]", enum, re.M) if o not in OPCODE_SENTINELS]
     supported, extra = set(), []
     for opcode in opcodes:
@@ -218,7 +218,8 @@ def treemap(title, data, left):
         shared = [g["name"] for g in data["groups"] if g.get("shared_sources") == group["name"]]
         suffix = "; shared by " + ", ".join(shared) if shared else ""
         parts.append(f'<g><title>{escape(group["name"])}: {group["done"]}/{total} ({100 * group["done"] / total:.0f}%){escape(suffix)}</title>')
-        for i, cell in enumerate(cells(total, x + 1, y + 1, w - 2, h - 2)):
+        inset = min(1, w / 4, h / 4)
+        for i, cell in enumerate(cells(total, x + inset, y + inset, w - 2 * inset, h - 2 * inset)):
             parts.append(rect(*cell, DONE_COLOR if i < group["done"] else TODO_COLOR))
         parts.append(f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:.2f}" height="{h:.2f}" fill="none" stroke="{BORDER}" stroke-width="2"/>')
         label = group["label"][:int((w - 10) / 7)]
@@ -360,13 +361,14 @@ if __name__ == "__main__":
     if args.root:
         PRX = args.root / "core" / "libs" / "prx"
         OPCODES = args.root / OPCODES.relative_to(ROOT)
+        ISA = args.root / ISA.relative_to(ROOT)
     output = args.output
     output.mkdir(parents=True, exist_ok=True)
     libraries, shaders = collect_libraries(), collect_shaders()
-    (output / "progress.json").write_text(json.dumps({"libraries": libraries, "shaders": shaders}, indent=2))
-    (output / "badge-libraries.svg").write_text(badge("libraries*", libraries))
-    (output / "badge-shaders.svg").write_text(badge("shaders", shaders))
-    (output / "progress.svg").write_text(render(libraries, shaders))
-    (output / "index.html").write_text(summary(libraries, shaders))
+    (output / "progress.json").write_text(json.dumps({"libraries": libraries, "shaders": shaders}, indent=2), encoding="utf-8")
+    (output / "badge-libraries.svg").write_text(badge("libraries*", libraries), encoding="utf-8")
+    (output / "badge-shaders.svg").write_text(badge("shaders", shaders), encoding="utf-8")
+    (output / "progress.svg").write_text(render(libraries, shaders), encoding="utf-8")
+    (output / "index.html").write_text(summary(libraries, shaders), encoding="utf-8")
     print(f'libraries {libraries["done"]}/{libraries["total"]} ({libraries["percent"]}%)')
     print(f'shaders {shaders["done"]}/{shaders["total"]} ({shaders["percent"]}%)')

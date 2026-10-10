@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - 'core/libs/prx/**'
+      - 'core/shader/recompiler/RdnaDecoder/include/RdnaDecoder/RdnaOpcode.hpp'
+      - 'tools/rdna_isa.txt'
       - 'tools/progress.py'
       - '.github/workflows/progress-report.yml'
 
