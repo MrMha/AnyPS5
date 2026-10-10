@@ -108,24 +108,26 @@ class RepositoryChecksTests(unittest.TestCase):
         self.git("commit", "-qm", "test: add convention fixture")
 
     def test_quoted_utf8_paths_are_checked(self):
-        path = self.root / "docs/dev/測試\tguide.md"
+        name = "docs/dev/測試guide.md" if os.name == "nt" else "docs/dev/測試\tguide.md"
+        path = self.root / name
         path.parent.mkdir(parents=True)
         path.write_text("[missing](absent.md)\n", encoding="utf-8")
         self.commit()
         check = Check("HEAD~1", "HEAD")
         check.repository()
         check.docs()
-        self.assertEqual(check.findings, [("doc-link", "docs/dev/測試\tguide.md", 1, "absent.md")])
+        self.assertEqual(check.findings, [("doc-link", name, 1, "absent.md")])
 
     def test_mixed_patch_types_preserve_file_order(self):
+        name = "a b.cpp" if os.name == "nt" else "a\nb.cpp"
         (self.root / "README.md").unlink()
         (self.root / "a.bin").write_bytes(b"binary\x00data")
-        (self.root / "a\nb.cpp").write_text("// debt\n", encoding="utf-8")
+        (self.root / name).write_text("// debt\n", encoding="utf-8")
         self.commit()
         check = Check("HEAD~1", "HEAD")
         check.code()
         check.repository()
-        self.assertIn(("comment", "a\nb.cpp", 1, ""), check.findings)
+        self.assertIn(("comment", name, 1, ""), check.findings)
         self.assertIn(("binary", "a.bin", 0, ""), check.findings)
         self.assertNotIn("README.md", check.added)
 
