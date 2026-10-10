@@ -121,12 +121,14 @@ int APS5_VABI sceQuoted() { return 0; })text";
 APS5_EXPORT("CCCCCCCCCCC", exampleUnknown02);
 int APS5_VABI sceReal() { return 0; }
 ''')
-        self.assertEqual(nid_names.collect_unknowns(), {"CCCCCCCCCCC": "core/libs/prx/libSceExample/Export.cpp:exampleUnknown02"})
+        expected = str(Path("core/libs/prx/libSceExample/Export.cpp")) + ":exampleUnknown02"
+        self.assertEqual(nid_names.collect_unknowns(), {"CCCCCCCCCCC": expected})
         self.assertEqual(nid_names.collect_real_names(), {"sceReal"})
 
     def test_formatted_alias_macro_is_detected(self):
         self.write_source('APS5_EXPORT (\n "AAAAAAAAAAA" ,\n exampleUnknown00\n );\n')
-        self.assertEqual(nid_names.collect_unknowns(), {"AAAAAAAAAAA": "core/libs/prx/libSceExample/Export.cpp:exampleUnknown00"})
+        expected = str(Path("core/libs/prx/libSceExample/Export.cpp")) + ":exampleUnknown00"
+        self.assertEqual(nid_names.collect_unknowns(), {"AAAAAAAAAAA": expected})
 
     def test_test_fixtures_are_not_runtime_implementations(self):
         self.write_source('APS5_EXPORT("AAAAAAAAAAA", exampleUnknown00);\nint APS5_VABI sceFixture() { return 0; }\n', "tests/Fixture.cpp")
@@ -159,7 +161,8 @@ int APS5_VABI sceReal() { return 0; }
 
     def test_spliced_line_comment_and_macro_tokens(self):
         self.write_source('// continued \\\nAPS5_EXPORT("AAAAAAAAAAA", exampleUnknown00);\nAPS5_EX\\\nPORT("BBBBBBBBBBB", exampleUnknown01);\n')
-        self.assertEqual(nid_names.collect_unknowns(), {"BBBBBBBBBBB": "core/libs/prx/libSceExample/Export.cpp:exampleUnknown01"})
+        expected = str(Path("core/libs/prx/libSceExample/Export.cpp")) + ":exampleUnknown01"
+        self.assertEqual(nid_names.collect_unknowns(), {"BBBBBBBBBBB": expected})
 
 
 if __name__ == "__main__":
