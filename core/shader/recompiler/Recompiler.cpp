@@ -393,6 +393,7 @@ CompiledVariant compileVariant(const RecompileRequest& request, IrProgram progra
     targetOptions.supportedExtensions = request.target.supportedExtensions;
     targetOptions.nonConstantImageOffsets = request.target.nonConstantImageOffsets;
     targetOptions.narrowSubgroupClock = request.target.narrowSubgroupClock;
+    targetOptions.float64DenormPreserve = request.target.float64DenormPreserve;
 
     constexpr SpirvEmitter spirvEmitter;
     CompiledShaderArtifact result;

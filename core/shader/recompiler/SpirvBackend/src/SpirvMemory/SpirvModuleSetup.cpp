@@ -147,6 +147,10 @@ void DefineModule(SpirvEmitterState& state) {
         }
         state.module.EmitCapability(spv::CapabilityFloat64);
         state.module.AddExecutionMode(state.mainFunc, spv::ExecutionModeSignedZeroInfNanPreserve, 64u);
+        if (state.float64DenormPreserve) {
+            state.module.EmitCapability(spv::CapabilityDenormPreserve);
+            state.module.AddExecutionMode(state.mainFunc, spv::ExecutionModeDenormPreserve, 64u);
+        }
     }
     if (const auto* workgroup = ShaderWorkgroupInput(state)) {
         const std::uint32_t derivativeDefault = state.requirements.computeDerivatives ? 2u : 1u;
